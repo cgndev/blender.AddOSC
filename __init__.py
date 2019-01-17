@@ -500,9 +500,11 @@ class OSC_Reading_Sending(bpy.types.Operator):
 #######################################
 
 class OSC_UI_Panel(bpy.types.Panel):
+    bl_category = "AddOSC"
     bl_label = "AddOSC Settings"
     bl_space_type = "VIEW_3D"
-    bl_region_type = "TOOLS"
+    bl_region_type = "UI"
+    bl_context = "objectmode"
 
     def draw(self, context):
         layout = self.layout
@@ -526,9 +528,11 @@ class OSC_UI_Panel(bpy.types.Panel):
 #######################################
 
 class OSC_UI_Panel2(bpy.types.Panel):
+    bl_category = "AddOSC"
     bl_label = "AddOSC Operations"
     bl_space_type = "VIEW_3D"
-    bl_region_type = "TOOLS"
+    bl_region_type = "UI"
+    bl_context = "objectmode"
 
     def draw(self, context):
         layout = self.layout
@@ -552,22 +556,22 @@ class OSC_UI_Panel2(bpy.types.Panel):
         layout.label(text="Imported Keys:")
         for item in bpy.context.scene.OSC_keys:
             box3 = layout.box()
-            split = box3.split()
-            col = split.column()
-            col.prop(item,'data_path',text='Path')
-            col.prop(item, 'address')
-            col2 = split.column()
-            row4 = col2.row(align=True)
-            row4.prop(item,'id',text='')
-            row4.label(text="("+item.osc_type+")")
-
-            row5 = col2.row(align=True)
-            row5.operator("addosc.pick", text='Pick').i_addr = item.address
-            row5.prop(item, 'idx', text='Index')
+            #split = box3.split()
+            rowItm1 = box3.row()
+            if bpy.context.window_manager.addosc_monitor == True:
+                rowItm1.operator("addosc.pick", text='', icon='EYEDROPPER').i_addr = item.address
+            rowItm1.prop(item, 'address',text='Osc-addr')
+            rowItm1.prop(item, 'osc_index',text='Osc-argument[index]')
+            rowItm1.label(text="("+item.osc_type+")")
+             
+            rowItm2 = box3.row()
+            rowItm2.prop(item,'data_path',text='Blender-path')
+            rowItm2.prop(item,'id',text='ID')
+            rowItm2.prop(item, 'idx', text='Index')
 
             if bpy.context.window_manager.addosc_monitor == True:
-                col.prop(item, 'value')
-
+                rowItm3 = box3.row()
+                rowItm3.prop(item, 'value',text='current value')
 
 class StartUDP(bpy.types.Operator):
     bl_idname = "addosc.startudp"
