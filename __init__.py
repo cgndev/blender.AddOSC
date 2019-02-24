@@ -92,6 +92,7 @@ OSC_callback_queue = queue.Queue()
 
 # define the method the timer thread is calling when it is appropriate
 def execute_queued_OSC_callbacks():
+    print("newqueExecute")
     # while there are callbacks stored inside the queue
     while not OSC_callback_queue.empty():
         items = OSC_callback_queue.get()
@@ -99,63 +100,57 @@ def execute_queued_OSC_callbacks():
         args = items[1:]
         # execute them 
         func(*args)
-    return .01
+    return 0
 
-# register the execute queue method
-bpy.app.timers.register(execute_queued_OSC_callbacks)
-
-def OSC_callback_unkown(path, args, types, src, data):
+def OSC_callback_unkown(address, args, data):
     if bpy.context.window_manager.addosc_monitor == True:
-        print("received unknown message '%s'" % path)
-        print("from '%s'" % (src.url))
-        for a, t in zip(args, types):
-            print("argument of type '%s': %s" % (t, a))
+        print("received unknown message '%s'" % address)
+        for a in args:
+            print("argument %s" % a)
 
-def OSC_callback_custom(path, args, types, src, ob, attribute, idx, oscIndex):
+def OSC_callback_custom(address, obj, attr, attrIdx, oscArgs, oscIndex):
     try:
-        ob[attribute] = args[oscIndex]
+        obj[attr] = oscArgs[oscIndex]
     except:
         if bpy.context.window_manager.addosc_monitor == True:
-            print ("Improper content received: "+str(args)+" for OSC route: "+path)
+            print ("Improper content received: "+ address + " " + str(oscArgs))
 
-def OSC_callback_property(path, args, types, src, ob, attribute, idx, oscIndex):
+def OSC_callback_property(address, obj, attr, attrIdx, oscArgs, oscIndex):
     try:
-        getattr(ob,attribute)[idx] = args[oscIndex]
+        getattr(obj,attr)[attrIdx] = oscArgs[oscIndex]
     except:
         if bpy.context.window_manager.addosc_monitor == True:
-            print ("Improper content received: "+str(args)+" for OSC route: "+path)
+            print ("Improper property received:: "+address + " " + str(oscArgs))
 
-def OSC_callback_properties(path, args, types, src, ob, attribute, idx, oscIndex):
+def OSC_callback_properties(address, obj, attr, attrIdx, oscArgs, oscIndex):
     try:
         if len(oscIndex) == 3:
-            getattr(ob, attribute)[:] = args[oscIndex[0]], args[oscIndex[1]], args[oscIndex[2]]
+            print(path)
+            getattr(obj, attr)[:] = oscArgs[oscIndex[0]], oscArgs[oscIndex[1]], oscArgs[oscIndex[2]]
         if len(oscIndex) == 4:
-            getattr(ob, attribute)[:] = args[oscIndex[0]], args[oscIndex[1]], args[oscIndex[2]], args[oscIndex[3]]
+            getattr(obj, attr)[:] = oscArgs[oscIndex[0]], oscArgs[oscIndex[1]], oscArgs[oscIndex[2]], oscArgs[oscIndex[3]]
     except:
         if bpy.context.window_manager.addosc_monitor == True:
-            print ("Improper properties received: "+str(args)+" for OSC route: "+path)
+            print ("Improper properties received: "+address + " " + str(oscArgs))
 
 def OSC_callback(path, args, types, src, data):
     # the args structure:
-    #    args[0] = osc address
-    #    args[1] = custom data pakage (tuplet with 5 values)
-    #    args[>1] = osc arguments
-    oscAddress = path
+    address = path
     mytype = data[0]        # callback type 
-    ob = data[1]            # blender object name (i.e. bpy.data.objects['Cube'])
-    attribute = data[2]     # blender object ID (i.e. location)
-    idx = data[3]           # ID-index (not used)
+    obj = data[1]           # blender object name (i.e. bpy.data.objects['Cube'])
+    attr = data[2]          # blender object ID (i.e. location)
+    attrIdx = data[3]       # ID-index (not used)
     oscIndex = data[4]      # osc argument index to use (should be a tuplet, like (1,2,3))
 
     if mytype == 0:
-        OSC_callback_queue.put((OSC_callback_unkown, path, args, types, src, data))
+        OSC_callback_queue.put((OSC_callback_unkown, address, args, data))
         #OSC_callback_unkown(args[:])
     elif mytype == 1:
-        OSC_callback_queue.put((OSC_callback_custom, path, args, types, src, ob, attribute, idx, oscIndex))
+        OSC_callback_queue.put((OSC_callback_custom, address, obj, attr, attrIdx, args, oscIndex))
     elif mytype == 2:
-        OSC_callback_queue.put((OSC_callback_property, path, args, types, src, ob, attribute, idx, oscIndex))
+        OSC_callback_queue.put((OSC_callback_property, address, obj, attr, attrIdx, args, oscIndex))
     elif mytype == 3:
-        OSC_callback_queue.put((OSC_callback_properties, path, args, types, src, ob, attribute, idx, oscIndex))
+        OSC_callback_queue.put((OSC_callback_properties, address, obj, attr, attrIdx, args, oscIndex))
 
     
 #For saving/restoring settings in the blendfile
@@ -430,6 +425,9 @@ class OSC_Reading_Sending(bpy.types.Operator):
             #self.st.add_method(None, None, OSC_callback_unkown)
             print("self.st.start():")
             self.st.start()
+            # register the execute queue method
+            bpy.app.timers.register(execute_queued_OSC_callbacks)
+
 
             #self.server = osc_server.ThreadingOSCUDPServer((bcw.addosc_udp_in, bcw.addosc_port_in), self.dispatcher)
             #self.server_thread = threading.Thread(target=self.server.serve_forever)
@@ -452,6 +450,8 @@ class OSC_Reading_Sending(bpy.types.Operator):
         self.st.stop()
         self.st.free()
         #self.server.shutdown()
+        # unregister the execute queue method
+        bpy.app.timers.unregister(execute_queued_OSC_callbacks)
         context.window_manager.status = "Stopped"
         return {'CANCELLED'}
 
