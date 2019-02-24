@@ -88,18 +88,27 @@ _report= ["",""] #This for reporting OS network errors
 # a blender timer thread
 
 # define the queue to store the callbacks
-OSC_callback_queue = queue.Queue()
+OSC_callback_queue = queue.LifoQueue()
+
+# the repeatfilter, together with lifo (last in - first out) will
+# make sure only the last osc message received on a certain address
+# will be applied. all older messages will be ignored.
+queue_repeat_filter = {}
 
 # define the method the timer thread is calling when it is appropriate
 def execute_queued_OSC_callbacks():
-    print("newqueExecute")
+    queue_repeat_filter.clear()
     # while there are callbacks stored inside the queue
     while not OSC_callback_queue.empty():
         items = OSC_callback_queue.get()
-        func = items[0]
-        args = items[1:]
-        # execute them 
-        func(*args)
+        address = items[1]
+        # if the address has not been here before:
+        if queue_repeat_filter.get(address, False) == False:
+            func = items[0]
+            args = items[1:]
+            # execute them 
+            func(*args)
+        queue_repeat_filter[address] = True
     return 0
 
 def OSC_callback_unkown(address, args, data):
@@ -125,7 +134,6 @@ def OSC_callback_property(address, obj, attr, attrIdx, oscArgs, oscIndex):
 def OSC_callback_properties(address, obj, attr, attrIdx, oscArgs, oscIndex):
     try:
         if len(oscIndex) == 3:
-            print(path)
             getattr(obj, attr)[:] = oscArgs[oscIndex[0]], oscArgs[oscIndex[1]], oscArgs[oscIndex[2]]
         if len(oscIndex) == 4:
             getattr(obj, attr)[:] = oscArgs[oscIndex[0]], oscArgs[oscIndex[1]], oscArgs[oscIndex[2]], oscArgs[oscIndex[3]]
@@ -133,7 +141,7 @@ def OSC_callback_properties(address, obj, attr, attrIdx, oscArgs, oscIndex):
         if bpy.context.window_manager.addosc_monitor == True:
             print ("Improper properties received: "+address + " " + str(oscArgs))
 
-def OSC_callback(path, args, types, src, data):
+def OSC_callback_pyliblo(path, args, types, src, data):
     # the args structure:
     address = path
     mytype = data[0]        # callback type 
@@ -402,26 +410,25 @@ class OSC_Reading_Sending(bpy.types.Operator):
                 #For ID custom properties (with brackets)
                 if item.id[0:2] == '["' and item.id[-2:] == '"]':
                     dataTuple = (1, eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
-                    self.st.add_method(item.address, None, OSC_callback, dataTuple)
+                    self.st.add_method(item.address, None, OSC_callback_pyliblo, dataTuple)
                 #For normal properties
                 #with index in brackets -: i_num
                 elif item.id[-1] == ']':
                     d_p = item.id[:-3]
                     i_num = int(item.id[-2])
                     dataTuple = (2, eval(item.data_path), d_p, i_num, make_tuple(item.osc_index))
-                    self.st.add_method(item.address, None, OSC_callback, dataTuple)
+                    self.st.add_method(item.address, None, OSC_callback_pyliblo, dataTuple)
                 #without index in brackets
                 else:
                     try:
                         if isinstance(getattr(eval(item.data_path), item.id), mathutils.Vector):
                             dataTuple = (3, eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
-                            self.st.add_method(item.address, None, OSC_callback, dataTuple)
+                            self.st.add_method(item.address, None, OSC_callback_pyliblo, dataTuple)
                         elif isinstance(getattr(eval(item.data_path), item.id), mathutils.Quaternion):
                             dataTuple = (3, eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
-                            self.st.add_method(item.address, None, OSC_callback, dataTuple)
+                            self.st.add_method(item.address, None, OSC_callback_pyliblo, dataTuple)
                     except:
                         print ("Improper setup received: object '"+item.data_path+"' with id'"+item.id+"' is no recognized dataformat")
-            #self.st.add_method('/skeleton/Avatar2/bone/1/position', None, OSC_callback)
             #self.st.add_method(None, None, OSC_callback_unkown)
             print("self.st.start():")
             self.st.start()
