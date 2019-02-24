@@ -75,6 +75,7 @@ import threading
 import socketserver
 from bpy.app.handlers import persistent
 
+import queue
 
 _report= ["",""] #This for reporting OS network errors
 
@@ -82,121 +83,80 @@ _report= ["",""] #This for reporting OS network errors
 #  OSC Receive Method                 #
 #######################################
 
-def foo_cb(path, args, types):
-    print("foo_cb():")
-    for a, t in zip(args, types):
-        print("received argument %s of type %s" % (a, t))
- 
-def OSC_callback_custom(path, args, types, src, data):
-    ob = data[0]
-    idee = data[1]
-    idx = data[2]
-    oscindex = data[3]
-    try:
-        ob[idee] = args[oscindex]
-    except:
-        if bpy.context.window_manager.addosc_monitor == True:
-            print ("Improper content received: "+str(args)+" for OSC route: "+path)
+# the OSC-server should not directly modify blender data from its own thread.
+# instead we need a queue to store the callbacks and execute them inside
+# a blender timer thread
 
-def OSC_callback_property(path, args, types, src, data):
-    ob = data[0]
-    idee = data[1]
-    idx = data[2]
-    oscindex = data[3]
-    try:
-        getattr(ob,idee)[idx] = args[oscindex]
-    except:
-        if bpy.context.window_manager.addosc_monitor == True:
-            print ("Improper content received: "+str(args)+" for OSC route: "+path)
+# define the queue to store the callbacks
+OSC_callback_queue = queue.Queue()
 
-def OSC_callback_properties(path, args, types, src, data):
-    ob = data[0]
-    idee = data[1]
-    idx = data[2]
-    oscindex = data[3]
-    try:
-        if len(oscindex) == 3:
-            getattr(ob, idee)[:] = args[oscindex[0]], args[oscindex[1]], args[oscindex[2]]
-        if len(oscindex) == 4:
-            getattr(ob, idee)[:] = args[oscindex[0]], args[oscindex[1]], args[oscindex[2]], args[oscindex[3]]
-    except:
-        if bpy.context.window_manager.addosc_monitor == True:
-            print ("Improper properties received: "+str(args)+" for OSC route: "+path)
+# define the method the timer thread is calling when it is appropriate
+def execute_queued_OSC_callbacks():
+    # while there are callbacks stored inside the queue
+    while not OSC_callback_queue.empty():
+        items = OSC_callback_queue.get()
+        func = items[0]
+        args = items[1:]
+        # execute them 
+        func(*args)
+    return .01
+
+# register the execute queue method
+bpy.app.timers.register(execute_queued_OSC_callbacks)
 
 def OSC_callback_unkown(path, args, types, src, data):
-   if bpy.context.window_manager.addosc_monitor == True:
+    if bpy.context.window_manager.addosc_monitor == True:
         print("received unknown message '%s'" % path)
         print("from '%s'" % (src.url))
         for a, t in zip(args, types):
             print("argument of type '%s': %s" % (t, a))
 
+def OSC_callback_custom(path, args, types, src, ob, attribute, idx, oscIndex):
+    try:
+        ob[attribute] = args[oscIndex]
+    except:
+        if bpy.context.window_manager.addosc_monitor == True:
+            print ("Improper content received: "+str(args)+" for OSC route: "+path)
+
+def OSC_callback_property(path, args, types, src, ob, attribute, idx, oscIndex):
+    try:
+        getattr(ob,attribute)[idx] = args[oscIndex]
+    except:
+        if bpy.context.window_manager.addosc_monitor == True:
+            print ("Improper content received: "+str(args)+" for OSC route: "+path)
+
+def OSC_callback_properties(path, args, types, src, ob, attribute, idx, oscIndex):
+    try:
+        if len(oscIndex) == 3:
+            getattr(ob, attribute)[:] = args[oscIndex[0]], args[oscIndex[1]], args[oscIndex[2]]
+        if len(oscIndex) == 4:
+            getattr(ob, attribute)[:] = args[oscIndex[0]], args[oscIndex[1]], args[oscIndex[2]], args[oscIndex[3]]
+    except:
+        if bpy.context.window_manager.addosc_monitor == True:
+            print ("Improper properties received: "+str(args)+" for OSC route: "+path)
+
 def OSC_callback(path, args, types, src, data):
-    print("from '%s'" % (src.url))
-    print("received message '%s'" % path)
-    print("user data was '%s'" % str(data))
-    for a, t in zip(args, types):
-        print("argument of type '%s': %s" % (t, a))
+    # the args structure:
+    #    args[0] = osc address
+    #    args[1] = custom data pakage (tuplet with 5 values)
+    #    args[>1] = osc arguments
+    oscAddress = path
+    mytype = data[0]        # callback type 
+    ob = data[1]            # blender object name (i.e. bpy.data.objects['Cube'])
+    attribute = data[2]     # blender object ID (i.e. location)
+    idx = data[3]           # ID-index (not used)
+    oscIndex = data[4]      # osc argument index to use (should be a tuplet, like (1,2,3))
 
-    fail = True
-    if bpy.context.window_manager.addosc_monitor == True:
-        bpy.context.window_manager.addosc_lastaddr = args[0]
-        #content = str(args[1:])
-        content = str(args);
-        #print(args)
-        bpy.context.window_manager.addosc_lastpayload = content
-        #print ("content received: "+content+"for OSC route: "+args[0])
-    # for simple properties
-    for item in bpy.context.scene.OSC_keys:
+    if mytype == 0:
+        OSC_callback_queue.put((OSC_callback_unkown, path, args, types, src, data))
+        #OSC_callback_unkown(args[:])
+    elif mytype == 1:
+        OSC_callback_queue.put((OSC_callback_custom, path, args, types, src, ob, attribute, idx, oscIndex))
+    elif mytype == 2:
+        OSC_callback_queue.put((OSC_callback_property, path, args, types, src, ob, attribute, idx, oscIndex))
+    elif mytype == 3:
+        OSC_callback_queue.put((OSC_callback_properties, path, args, types, src, ob, attribute, idx, oscIndex))
 
-        if item.address == path:
-            ob = eval(item.data_path)
-            idx = item.idx
-            #print ("osc_type received: "+str(item.osc_type))
-            #print ("ob received: "+str(ob))
-            #print ("idx received: " + str(idx))
-            
-            #For ID custom properties (with brackets)
-            if item.id[0:2] == '["' and item.id[-2:] == '"]':
-                try:
-                    ob[item.id[2:-2]] = args[idx]
-                    fail = False
-
-                except:
-                    if bpy.context.window_manager.addosc_monitor == True:
-                        print ("Improper content received: "+content+"for OSC route: "+args[0]+" and key: "+item.id)
-
-            #For normal properties
-            #with index in brackets -: i_num
-            elif item.id[-1] == ']':
-                d_p = item.id[:-3]
-                i_num = int(item.id[-2])
-                try:
-                    getattr(ob,d_p)[i_num] = args[idx]
-                    fail = False
-                except:
-                    if bpy.context.window_manager.addosc_monitor == True:
-                        print ("Improper content received: "+content+"for OSC route: "+args[0]+" and key: "+item.id)
-            #without index in brackets
-            else:
-                try:
-                    valuelist = list()
-                    myNewTuple = make_tuple(item.osc_index)
-                    for val in myNewTuple:
-                        valuelist.append(args[val - 1])
-                    if isinstance(getattr(ob, item.id), mathutils.Vector):
-                        getattr(ob, item.id)[:] = valuelist;
-                    if isinstance(getattr(ob, item.id), mathutils.Quaternion):
-                        getattr(ob, item.id)[:] = valuelist;
-                    else:
-                        setattr(ob,item.id,args[idx])
-
-                    fail = False
-                except:
-                    if bpy.context.window_manager.addosc_monitor == True:
-                        print ("Improper content received: "+content+"for OSC route: "+args[0]+" and key: "+item.id)
-
-    if bpy.context.window_manager.addosc_monitor == True and fail == True:
-        print("Rejected OSC message, route: "+args[0]+" , content: "+content)
     
 #For saving/restoring settings in the blendfile
 def upd_settings_sub(n):
@@ -446,24 +406,24 @@ class OSC_Reading_Sending(bpy.types.Operator):
 
                 #For ID custom properties (with brackets)
                 if item.id[0:2] == '["' and item.id[-2:] == '"]':
-                    dataTuple = (eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
-                    self.st.add_method(item.address, None, OSC_callback_custom, dataTuple)
+                    dataTuple = (1, eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
+                    self.st.add_method(item.address, None, OSC_callback, dataTuple)
                 #For normal properties
                 #with index in brackets -: i_num
                 elif item.id[-1] == ']':
                     d_p = item.id[:-3]
                     i_num = int(item.id[-2])
-                    dataTuple = (eval(item.data_path), d_p, i_num, make_tuple(item.osc_index))
-                    self.st.add_method(item.address, None, OSC_callback_property, dataTuple)
+                    dataTuple = (2, eval(item.data_path), d_p, i_num, make_tuple(item.osc_index))
+                    self.st.add_method(item.address, None, OSC_callback, dataTuple)
                 #without index in brackets
                 else:
                     try:
                         if isinstance(getattr(eval(item.data_path), item.id), mathutils.Vector):
-                            dataTuple = (eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
-                            self.st.add_method(item.address, None, OSC_callback_properties, dataTuple)
+                            dataTuple = (3, eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
+                            self.st.add_method(item.address, None, OSC_callback, dataTuple)
                         elif isinstance(getattr(eval(item.data_path), item.id), mathutils.Quaternion):
-                            dataTuple = (eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
-                            self.st.add_method(item.address, None, OSC_callback_properties, dataTuple)
+                            dataTuple = (3, eval(item.data_path), item.id, item.idx, make_tuple(item.osc_index))
+                            self.st.add_method(item.address, None, OSC_callback, dataTuple)
                     except:
                         print ("Improper setup received: object '"+item.data_path+"' with id'"+item.id+"' is no recognized dataformat")
             #self.st.add_method('/skeleton/Avatar2/bone/1/position', None, OSC_callback)
