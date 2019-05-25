@@ -56,12 +56,13 @@ from bpy.props import *
 from ast import literal_eval as make_tuple
 
 import os
+import platform
 script_file = os.path.realpath(__file__)
 directory = os.path.dirname(script_file)
 if directory not in sys.path:
-   sys.path.append(directory)
+    sys.path.append(directory)
+    sys.path.append(os.path.join(directory,'pyliblo',platform.system()))
 
-sys.path.append("pyliblo/osx")
 import liblo
 
 from pythonosc import osc_message_builder

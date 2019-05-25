@@ -1,0 +1,26 @@
+{
+  "/rigidbody/1/position":{
+     "data_path":"bpy.data.objects['OscRelayCam']",
+     "id":"location",
+     "osc_type":"fff",
+     "osc_index":"(0, 1, 2)"
+  },
+  "/rigidbody/1/quat":{
+     "data_path":"bpy.data.objects['OscRelayCam']",
+     "id":"rotation_quaternion",
+     "osc_type":"ffff",
+     "osc_index":"(3, 0, 1, 2)"
+  },
+  "/rigidbody/2/position":{
+     "data_path":"bpy.data.objects['OscRelayLight']",
+     "id":"location",
+     "osc_type":"fff",
+     "osc_index":"(0, 1, 2)"
+  },
+  "/rigidbody/2/quat":{
+     "data_path":"bpy.data.objects['OscRelayLight']",
+     "id":"rotation_quaternion",
+     "osc_type":"ffff",
+     "osc_index":"(3, 0, 1, 2)"
+  }
+}
