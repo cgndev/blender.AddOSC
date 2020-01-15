@@ -1,3 +1,6 @@
+# DEPRECATED
+please check out the [NodeOSC addon](https://github.com/maybites/blender.NodeOSC)
+
 # AddOSC
 OSC support in the viewport for Blender, see: http://www.jpfep.net/pages/addosc/
 
@@ -40,8 +43,6 @@ to the specified path and ID
 
 This fork is updated to work with blender 2.8
 
-AddOSC relies on the python module python-osc (by Attwad): 
+AddOSC relies on the python module python-osc (by Attwad):
 https://pypi.python.org/pypi/python-osc/
 https://github.com/attwad/python-osc
-
- 
